@@ -2,6 +2,7 @@ import openai
 import os
 import pandas as pd
 from sklearn.metrics import accuracy_score, confusion_matrix
+import time
 
 def load_data(filepath: str) -> pd.DataFrame:
     return pd.read_csv(filepath)
@@ -30,15 +31,19 @@ def classify(report: str, api_key: str) -> str:
     {report}
     ---
     """
-    
-    completion = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo-16k",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": instruct_prompt}
-        ])
-    
-    return completion.choices[0].message.content
+    try:
+        completion = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": instruct_prompt}
+            ])
+        
+        return completion.choices[0].message.content
+
+    except Exception as e:
+        print(f"Error classifying report: {e}")
+        return "error"
 
 def main():
     all_classes = [
@@ -62,12 +67,19 @@ def main():
 
     actual_labels = []
     predicted_labels = []
-    for _, row in test_data.iterrows():
-        report = row[1]
-        actual_label = row[0]
-        predicted_label = classify(report, api_key)
-        actual_labels.append(actual_label)
-        predicted_labels.append(predicted_label)
+    reports = []
+    BATCH_SIZE = 50
+    for i in range(0, len(test_data), BATCH_SIZE):
+        batch = test_data.iloc[i:i+BATCH_SIZE]
+        print(f"Processing batch starting from index {i}")
+        for _, row in batch.iterrows():
+            report = row["Report"]
+            actual_label = row["Label"]
+            predicted_label = classify(report, api_key)
+            actual_labels.append(actual_label)
+            predicted_labels.append(predicted_label)
+            reports.append(report)
+        time.sleep(6)
 
     accuracy = accuracy_score(actual_labels, predicted_labels)
     conf_matrix = confusion_matrix(actual_labels, predicted_labels, labels=all_classes)
@@ -75,7 +87,7 @@ def main():
     results_df = pd.DataFrame({
         'Actual Label': actual_labels,
         'Predicted Label': predicted_labels,
-        'Report': test_data['Report']
+        'Report': reports
     })
     results_file_path = "classification_results.csv"
     results_df.to_csv(results_file_path, index=False)
