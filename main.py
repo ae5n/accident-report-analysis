@@ -8,31 +8,37 @@ def load_data(filepath: str) -> pd.DataFrame:
 
 def classify(report: str, api_key: str) -> str:
     instruct_prompt = f"""
-    Task: Classify the provided construction accident report. Determine the cause of the accident, which may be: electrocution, struck, fall, or caught. Assess whether the incident was fatal or nonfatal.
+    Task: Classify the provided construction accident report. Determine the cause of the accident, which may be one of: electrocution, struck, fall, or caught.
 
+    Further, classify the severity of the incident:
+
+    Fatal: The accident resulted in the death of the individual(s) involved.
+    Nonfatal: The accident resulted in injury, but did not lead to death.
+    
     Your response should be exactly one of the following options, without additional explanations:
-    - electrocution_nonfatal
-    - struck_nonfatal
-    - fall_nonfatal
-    - caught_nonfatal
-    - electrocution_fatal
-    - struck_fatal
-    - caught_fatal
-    - fall_fatal
+
+    electrocution_nonfatal
+    struck_nonfatal
+    fall_nonfatal
+    caught_nonfatal
+    electrocution_fatal
+    struck_fatal
+    caught_fatal
+    fall_fatal
     ---
     Report:
     {report}
     ---
     """
     
-    completion = openai.Completion.create(
-        model="gpt-3.5-turbo",
+    completion = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo-16k",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": instruct_prompt}
         ])
     
-    return completion.choices[0].message['content']
+    return completion.choices[0].message.content
 
 def main():
     all_classes = [
