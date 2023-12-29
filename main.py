@@ -1,4 +1,5 @@
 import openai
+import google.generativeai as genai
 import os
 import pandas as pd
 from sklearn.metrics import accuracy_score, confusion_matrix
@@ -7,7 +8,7 @@ import time
 def load_data(filepath: str) -> pd.DataFrame:
     return pd.read_csv(filepath)
 
-def classify(report: str, api_key: str, instruct_prompt: str) -> str:
+def classify(report: str, model_type: str, instruct_prompt: str) -> str:
     full_prompt = f"""
     Task: {instruct_prompt}
     ---
@@ -15,20 +16,48 @@ def classify(report: str, api_key: str, instruct_prompt: str) -> str:
     {report}
     ---
     """
-    try:
-        completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": full_prompt}
-            ])
+    try: 
+        if model_type == 'openai':
+            openai_api_key = os.environ.get('OPENAI_API_KEY')
+            if not openai_api_key:
+                raise ValueError("OPENAI_API_KEY not found in environment variables.")
+            openai.api_key = openai_api_key
+            completion = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": full_prompt}
+                ])    
+            return completion.choices[0].message.content
         
-        return completion.choices[0].message.content
+        elif model_type == 'google':
+            google_api_key = os.environ.get('GOOGLE_API_KEY')
+            if not google_api_key:
+                raise ValueError("GOOGLE_API_KEY not found in environment variables.")
+            genai.configure(api_key=google_api_key)
+            generation_config = {
+                "temperature": 0.9,
+                "top_p": 1,
+                "top_k": 1,
+                "max_output_tokens": 2048
+            }
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
+            ]
+            model = genai.GenerativeModel(model_name="gemini-pro", generation_config=generation_config, safety_settings=safety_settings)
+            response = model.generate_content(full_prompt)
+            return response.text
+       
+        else:
+            raise ValueError("Invalid model type specified.")
 
     except Exception as e:
-        print(f"Error classifying report: {e}")
+        print(f"Error classifying report with {model_type}: {e}")
         return "error"
-
+    
 def main():
     data_path = 'labeled_data.csv'
     test_data = load_data(data_path)
@@ -39,11 +68,6 @@ def main():
     actual_body_part_labels = test_data['Body Part'].tolist()
     actual_accident_time_labels = test_data['Accident Time'].tolist()
 
-    api_key = os.environ.get('OPENAI_API_KEY')
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY not found in environment variables.")
-    openai.api_key = api_key
-    
     reports = []
 
     injury_cause_labels = []
@@ -68,11 +92,12 @@ def main():
         print(f"Processing batch starting from index {i}")
         for _, row in batch.iterrows():
             report = row["Report"]
-            injury_cause = classify(report, api_key, injury_cause_prompt)
-            root_cause = classify(report, api_key, root_cause_prompt)
-            severity = classify(report, api_key, severity_prompt)
-            body_part = classify(report, api_key, body_part_prompt)
-            accident_time = classify(report, api_key, accident_time_prompt)
+            model_type = 'google'
+            injury_cause = classify(report, model_type, injury_cause_prompt)
+            root_cause = classify(report, model_type, root_cause_prompt)
+            severity = classify(report, model_type, severity_prompt)
+            body_part = classify(report, model_type, body_part_prompt)
+            accident_time = classify(report, model_type, accident_time_prompt)
             time.sleep(3)
             injury_cause_labels.append(injury_cause)
             root_cause_labels.append(root_cause)
@@ -99,7 +124,7 @@ def main():
         'Report': reports
     })
 
-    results_file_path = "classification_results.csv"
+    results_file_path = "classification_results_gemeni.csv"
     results_df.to_csv(results_file_path, index=False)
 
     # print("Accuracy:", accuracy)
